@@ -1,0 +1,60 @@
+{
+  "name": "@axidev/io",
+  "version": "0.1.0",
+  "description": "Node/Electron main-process wrapper around the native axidev-io keyboard library",
+  "keywords": [
+    "axidev",
+    "electron",
+    "keyboard",
+    "listener",
+    "napi",
+    "native",
+    "node"
+  ],
+  "license": "MIT",
+  "author": "Axidev",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "binding.gyp",
+    "index.d.ts",
+    "index.js",
+    "LICENSE",
+    "README.md",
+    "scripts/build-addon.mjs",
+    "scripts/sync-upstream.mjs",
+    "src/**/*.c",
+    "src/**/*.cc",
+    "vendor/axidev-io/build.py",
+    "vendor/axidev-io/include/**/*",
+    "vendor/axidev-io/scripts/**/*",
+    "vendor/axidev-io/src/**/*",
+    "vendor/axidev-io/vendor/licenses/**/*",
+    "vendor/axidev-io/vendor/stb/**/*",
+    "vendor/axidev-io/LICENSE",
+    "vendor/axidev-io/README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "linux",
+    "win32"
+  ],
+  "gypfile": true,
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('build', { recursive: true, force: true }); require('node:fs').rmSync('vendor/axidev-io/build', { recursive: true, force: true })\"",
+    "install": "node scripts/build-addon.mjs",
+    "rebuild": "node scripts/build-addon.mjs",
+    "smoke": "node scripts/smoke.js",
+    "sync:upstream": "node scripts/sync-upstream.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "node-gyp": "^12.2.0"
+  }
+}
