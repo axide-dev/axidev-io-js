@@ -25,6 +25,20 @@ function run(command, args, options = {}) {
   }
 }
 
+function capture(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: rootDir,
+    encoding: "utf8",
+    ...options,
+  });
+
+  if (result.status !== 0) {
+    return null;
+  }
+
+  return result.stdout.trim();
+}
+
 function sortVersionsDescending(entries) {
   return [...entries].sort((left, right) => {
     const leftParts = left.split(".").map((part) => Number.parseInt(part, 10) || 0);
@@ -40,6 +54,12 @@ function sortVersionsDescending(entries) {
 
     return 0;
   });
+}
+
+function uniqueExistingPaths(paths) {
+  return [...new Set(paths.filter(Boolean).map((entry) => path.normalize(entry)))].filter(
+    (entry) => existsSync(entry),
+  );
 }
 
 function ensureClangExists() {
@@ -76,20 +96,27 @@ function ensureNodeHeaders() {
   };
 }
 
-function findMsvcLibDir() {
-  const baseDir = path.join(
-    process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
-    "Microsoft Visual Studio",
-    "2022",
+function findVsWherePath() {
+  return (
+    uniqueExistingPaths([
+      path.join(
+        process.env.ProgramFiles ?? "C:\\Program Files",
+        "Microsoft Visual Studio",
+        "Installer",
+        "vswhere.exe",
+      ),
+      path.join(
+        process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
+        "Microsoft Visual Studio",
+        "Installer",
+        "vswhere.exe",
+      ),
+    ])[0] ?? null
   );
-  const editions = ["BuildTools", "Community", "Professional", "Enterprise"];
+}
 
-  for (const edition of editions) {
-    const toolsRoot = path.join(baseDir, edition, "VC", "Tools", "MSVC");
-    if (!existsSync(toolsRoot)) {
-      continue;
-    }
-
+function listVersionedLibDirs(toolsRoots) {
+  for (const toolsRoot of toolsRoots) {
     const versions = sortVersionsDescending(
       readdirSync(toolsRoot, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -104,37 +131,107 @@ function findMsvcLibDir() {
     }
   }
 
-  throw new Error("Could not find the MSVC x64 library directory");
+  return null;
 }
 
-function findWindowsSdkLibDirs() {
-  const sdkRoot = path.join(
-    process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
-    "Windows Kits",
-    "10",
-    "lib",
-  );
-
-  if (!existsSync(sdkRoot)) {
-    throw new Error("Could not find the Windows 10 SDK libraries");
+function findMsvcLibDir() {
+  const directCandidates = uniqueExistingPaths([
+    process.env.VCToolsInstallDir ? path.join(process.env.VCToolsInstallDir, "lib", "x64") : null,
+  ]);
+  if (directCandidates.length > 0) {
+    return directCandidates[0];
   }
 
-  const versions = sortVersionsDescending(
-    readdirSync(sdkRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name),
-  );
+  const toolsRoots = [];
+  const editions = ["BuildTools", "Community", "Professional", "Enterprise"];
+  const years = ["2026", "2022"];
+  const programFilesRoots = [
+    process.env.ProgramFiles ?? "C:\\Program Files",
+    process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
+  ];
 
-  for (const version of versions) {
-    const ucrt = path.join(sdkRoot, version, "ucrt", "x64");
-    const um = path.join(sdkRoot, version, "um", "x64");
+  if (process.env.VCINSTALLDIR) {
+    toolsRoots.push(path.join(process.env.VCINSTALLDIR, "Tools", "MSVC"));
+  }
 
-    if (existsSync(ucrt) && existsSync(um)) {
-      return { ucrt, um };
+  const vsWherePath = findVsWherePath();
+  if (vsWherePath) {
+    const installPath = capture(vsWherePath, [
+      "-latest",
+      "-products",
+      "*",
+      "-requires",
+      "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+      "-property",
+      "installationPath",
+    ]);
+
+    if (installPath) {
+      toolsRoots.push(path.join(installPath.split(/\r?\n/).pop(), "VC", "Tools", "MSVC"));
     }
   }
 
-  throw new Error("Could not find matching Windows SDK ucrt/um x64 library directories");
+  for (const programFilesRoot of programFilesRoots) {
+    for (const year of years) {
+      for (const edition of editions) {
+        toolsRoots.push(
+          path.join(programFilesRoot, "Microsoft Visual Studio", year, edition, "VC", "Tools", "MSVC"),
+        );
+      }
+    }
+  }
+
+  const candidate = listVersionedLibDirs(uniqueExistingPaths(toolsRoots));
+  if (candidate) {
+    return candidate;
+  }
+
+  throw new Error(
+    `Could not find the MSVC x64 library directory. Checked: ${uniqueExistingPaths(toolsRoots).join(", ") || "none"}`,
+  );
+}
+
+function findWindowsSdkLibDirs() {
+  const sdkRoots = uniqueExistingPaths([
+    process.env.WindowsSdkDir ? path.join(process.env.WindowsSdkDir, "Lib") : null,
+    path.join(
+      process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
+      "Windows Kits",
+      "10",
+      "Lib",
+    ),
+    path.join(
+      process.env.ProgramFiles ?? "C:\\Program Files",
+      "Windows Kits",
+      "10",
+      "Lib",
+    ),
+  ]);
+
+  if (sdkRoots.length === 0) {
+    throw new Error("Could not find the Windows 10 SDK libraries");
+  }
+
+  for (const sdkRoot of sdkRoots) {
+    const versions = sortVersionsDescending(
+      readdirSync(sdkRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name),
+    );
+
+    for (const version of versions) {
+      const ucrt = path.join(sdkRoot, version, "ucrt", "x64");
+      const um = path.join(sdkRoot, version, "um", "x64");
+
+      if (existsSync(ucrt) && existsSync(um)) {
+        return { ucrt, um };
+      }
+    }
+  }
+
+  throw new Error(
+    `Could not find matching Windows SDK ucrt/um x64 library directories. Checked: ${sdkRoots.join(", ")}`,
+  );
 }
 
 function buildWindowsAddon() {
