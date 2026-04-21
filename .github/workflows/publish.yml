@@ -195,8 +195,11 @@ jobs:
           test -f prebuilds/linux-x64/axidev_io.node
           test -f prebuilds/win32-x64/axidev_io.node
 
+      - name: Remove prepare script from publish manifest
+        run: npm pkg delete scripts.prepare
+
       - name: Verify final publish tarball
-        run: npm pack --dry-run --ignore-scripts
+        run: npm pack --dry-run
 
       - name: Publish public package to npm
         env:
