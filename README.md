@@ -182,6 +182,8 @@ Recommended release flow:
 3. Create a Git tag from `release`
 4. Publish a GitHub Release for that tag
 
+Maintainers should use the dedicated runbook in `docs/maintainers/releasing.md` for the exact `main` -> `release` promotion and publishing steps.
+
 Required GitHub Actions secret:
 
 - `NPM_TOKEN`: an npm token that can publish the public `@axidev/io` package under the `axidev` organization on npm
