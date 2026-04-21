@@ -196,7 +196,7 @@ jobs:
           test -f prebuilds/win32-x64/axidev_io.node
 
       - name: Verify final publish tarball
-        run: npm pack --dry-run
+        run: npm pack --dry-run --ignore-scripts
 
       - name: Publish public package to npm
         env:
