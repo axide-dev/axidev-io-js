@@ -13,28 +13,32 @@
   ],
   "license": "MIT",
   "author": "Axidev",
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": "./index.js",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.js"
+    },
+    "./keyboard": {
+      "types": "./dist/keyboard.d.ts",
+      "require": "./dist/keyboard.js",
+      "import": "./dist/keyboard.mjs",
+      "default": "./dist/keyboard.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
-    "binding.gyp",
-    "index.d.ts",
-    "index.js",
+    "dist/**/*",
+    "prebuilds/**/*.node",
     "LICENSE",
     "README.md",
-    "scripts/build-addon.mjs",
-    "scripts/sync-upstream.mjs",
-    "src/**/*.c",
-    "src/**/*.cc",
-    "vendor/axidev-io/build.py",
-    "vendor/axidev-io/include/**/*",
-    "vendor/axidev-io/scripts/**/*",
-    "vendor/axidev-io/src/**/*",
+    "vendor/axidev-io/docs/**/*.md",
+    "vendor/axidev-io/scripts/setup_uinput_permissions.sh",
     "vendor/axidev-io/vendor/licenses/**/*",
-    "vendor/axidev-io/vendor/stb/**/*",
     "vendor/axidev-io/LICENSE",
     "vendor/axidev-io/README.md"
   ],
@@ -45,16 +49,29 @@
     "linux",
     "win32"
   ],
-  "gypfile": true,
   "scripts": {
-    "clean": "node -e \"require('node:fs').rmSync('build', { recursive: true, force: true }); require('node:fs').rmSync('vendor/axidev-io/build', { recursive: true, force: true })\"",
-    "install": "node scripts/build-addon.mjs",
-    "rebuild": "node scripts/build-addon.mjs",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && rollup -c",
+    "build:native": "node scripts/build-addon.mjs",
+    "build:release": "npm run build && npm run build:native && npm run stage:prebuilt",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true }); require('node:fs').rmSync('prebuilds', { recursive: true, force: true }); require('node:fs').rmSync('build', { recursive: true, force: true }); require('node:fs').rmSync('vendor/axidev-io/build', { recursive: true, force: true })\"",
+    "prepare": "npm run build:release",
+    "rebuild": "npm run build:native && npm run stage:prebuilt",
+    "stage:prebuilt": "node scripts/stage-prebuilt.mjs",
+    "presmoke": "npm run build:release",
+    "pretest": "npm run build:release",
     "smoke": "node scripts/smoke.js",
     "sync:upstream": "node scripts/sync-upstream.mjs",
-    "test": "node --test"
+    "test:consumer:esm": "node scripts/install-test-package.mjs && npm --prefix test-package run hello",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "node-gyp": "^12.2.0"
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@types/node": "^25.6.0",
+    "node-gyp": "^12.2.0",
+    "rollup": "^4.60.2",
+    "rollup-plugin-dts": "^6.4.1",
+    "tslib": "^2.8.1",
+    "typescript": "^6.0.3"
   }
 }

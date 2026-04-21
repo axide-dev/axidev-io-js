@@ -1,140 +1,124 @@
 # @axidev/io
 
-`@axidev/io` is a Node/Electron package that wraps the native `axidev-io` C
-library behind a JavaScript-friendly API.
+`@axidev/io` is a Node/Electron main-process package for keyboard automation and keyboard event listening.
 
-Recommended architecture:
+It wraps the native `axidev-io` library and exposes a small JS API centered around `keyboard`, `keyboard.sender`, `keyboard.listener`, and `keyboard.keys`.
 
-```text
-Electron main process / Node -> N-API addon -> axidev-io
-```
-
-This package is intended for the Electron main process or plain Node. It is not
-designed for renderer code.
-
-## What It Wraps
-
-The upstream lives under `vendor/axidev-io/` as a Git submodule tracking:
-
-- `git@github.com:axide-dev/axidev-io.git`
-- branch `release`
-
-The native addon exposes the upstream keyboard sender/listener surface and uses
-`napi_threadsafe_function` to bridge listener callbacks from the library's
-background thread into JavaScript safely.
+Supports ESM. CommonJS is also available.
 
 ## Install
 
 ```sh
-npm install
+npm install @axidev/io
 ```
 
-The install step builds the addon locally.
+The published package ships compiled JavaScript from `dist/` and packaged native addon binaries from `prebuilds/<platform>-<arch>/`.
+End users should not need a local C/C++ build toolchain when a matching prebuilt is present.
 
-If you are working from source, initialize the upstream submodule first:
+Important native docs are shipped in the package as well:
 
-```sh
-git submodule update --init --recursive
-```
+- `vendor/axidev-io/docs/consumers/README.md`
+- `vendor/axidev-io/README.md`
+- `vendor/axidev-io/LICENSE`
+- `vendor/axidev-io/vendor/licenses/*`
 
-- Linux uses `node-gyp`
-- Windows uses the vendored upstream `build.py` plus a direct `clang` link step
+## Platform Notes
 
-### Windows Prerequisites
+Supported platforms:
 
-At build time:
+- Linux
+- Windows
 
-- LLVM with `clang`, `clang++`, and `llvm-ar`
-- Python 3
-- Visual Studio Build Tools with the Windows SDK libraries
+This package is meant for Node.js and Electron main-process usage. It is not intended for browser code or Electron renderer code.
 
-### Linux Prerequisites
+## System Requirements
 
-At build time:
+### Windows
 
-- `pkg-config`
-- `libinput`
-- `libudev`
-- `xkbcommon`
+Runtime notes:
 
-At runtime:
+- uses the packaged prebuilt `axidev_io.node`
+- no local compiler toolchain is required for normal npm installs
 
-- write access to `/dev/uinput` for key injection
+### Linux
+
+Runtime requirements:
+
+- the packaged prebuilt `axidev_io.node`
+- system shared libraries for `libinput`, `libudev`, and `xkbcommon`
+- access to `/dev/uinput` for key injection
 - access to the relevant `/dev/input/event*` devices for listening
 
-These are system/environment requirements from `axidev-io`, not npm issues.
+On Linux, those backend dependencies are intentionally expected from the system and must remain dynamically linked.
+`keyboard.setupPermissions()` can help set up the required `uinput` access.
+For the full native runtime/compliance guidance, read `vendor/axidev-io/docs/consumers/README.md` in the installed package.
 
-## Permissions
-
-For application code, prefer `setupPermissions()` as the single entrypoint for
-permission setup.
-
-- On Linux, it checks whether `/dev/uinput` access is already available.
-- If access is missing, it runs the vendored `setup_uinput_permissions.sh`
-  helper and returns `requiresLogout: true`.
-- On Windows, it simply validates the native permission path and returns.
+## Simple Example
 
 ```js
-const io = require("@axidev/io");
+import { keyboard } from "@axidev/io";
 
-const permissions = io.setupPermissions();
+const permissions = keyboard.setupPermissions();
 
 if (permissions.requiresLogout) {
-  console.log("Log out and back in, then rerun the app.");
+  console.log("Log out and back in, then run again.");
   process.exit(0);
 }
 
-io.initialize({ keyDelayUs: 2000 });
-```
+keyboard.initialize({ keyDelayUs: 2000 });
 
-`requestPermissions()` is still available as the low-level native call if you
-need it, but `setupPermissions()` is the recommended package-level helper.
+keyboard.sender.text("Hello from @axidev/io");
+keyboard.sender.tap("Ctrl+Shift+P");
 
-## Usage
-
-```js
-const io = require("@axidev/io");
-
-io.initialize({ keyDelayUs: 2000 });
-
-io.typeText("Hello from Node");
-io.tap("Ctrl+C");
-io.tap({ key: "A", mods: ["Shift"] });
-
-const stop = io.listen((event) => {
+const stop = keyboard.listener.start((event) => {
   console.log(event.combo, event.pressed, event.text);
 });
 
 setTimeout(() => {
   stop();
-  io.shutdown();
+  keyboard.shutdown();
 }, 5000);
 ```
 
-### Main API
+## API Shape
 
-- `initialize(options?)`
-- `shutdown()` / `free()`
-- `isReady()`
-- `requestPermissions()` / `setupPermissions()`
-- `typeText(text)`
-- `typeCharacter(charOrCodepoint)`
-- `tap(input, mods?)`
-- `keyDown(input, mods?)`
-- `keyUp(input, mods?)`
-- `listen(callback)` / `startListener(callback)`
-- `stopListener()`
-- `getCapabilities()`
-- `status()`
-- `parseKey(name)` / `formatKey(key)`
-- `parseCombo(text)` / `formatCombo(input, mods?)`
+Main entrypoints:
 
-Preferred inputs are strings such as `"A"` or `"Ctrl+Shift+P"`, but numeric
-key ids are also accepted for low-level use.
+- `keyboard.initialize(options?)`
+- `keyboard.shutdown()`
+- `keyboard.setupPermissions()`
+- `keyboard.status()`
+- `keyboard.version()`
+
+Sender methods:
+
+- `keyboard.sender.tap(input, mods?)`
+- `keyboard.sender.keyDown(input, mods?)`
+- `keyboard.sender.keyUp(input, mods?)`
+- `keyboard.sender.text(text)`
+- `keyboard.sender.typeCharacter(input)`
+- `keyboard.sender.holdModifiers(mods)`
+- `keyboard.sender.releaseModifiers(mods)`
+- `keyboard.sender.releaseAllModifiers()`
+- `keyboard.sender.flush()`
+
+Listener methods:
+
+- `keyboard.listener.start(callback)`
+- `keyboard.listener.stop()`
+
+Key helpers:
+
+- `keyboard.keys.parse(name)`
+- `keyboard.keys.format(key)`
+- `keyboard.keys.parseCombo(text)`
+- `keyboard.keys.formatCombo(input, mods?)`
+- `keyboard.keys.modifiers.resolve(mods)`
+- `keyboard.keys.modifiers.toNames(mask)`
 
 ## Listener Events
 
-Listener callbacks receive:
+Listener callbacks receive objects shaped like:
 
 ```ts
 type KeyEvent = {
@@ -149,31 +133,29 @@ type KeyEvent = {
 };
 ```
 
-The JS layer fans out a single native listener to multiple JS subscribers.
+## Initialization
+
+Call `keyboard.initialize()` before using:
+
+- `keyboard.sender.*`
+- `keyboard.listener.start(...)`
+
+Key parsing and formatting helpers under `keyboard.keys` can be used without initialization.
 
 ## Development
 
-Sync the upstream submodule to the latest `release` commit:
+Useful scripts:
 
-```sh
-npm run sync:upstream
-```
+- `npm run build`
+- `npm run build:native`
+- `npm run stage:prebuilt`
+- `npm run build:release`
+- `npm run smoke`
+- `npm run test:consumer:esm`
+- `npm test`
+- `npm run typecheck`
+- `npm run sync:upstream`
 
-Run a quick load/parsing smoke test:
-
-```sh
-npm run smoke
-```
-
-Run the local test suite:
-
-```sh
-npm test
-```
-
-Run the upstream integration suite from the vendored submodule:
-
-```sh
-cd vendor/axidev-io
-python build.py test
-```
+There is also a tracked local consumer fixture in `test-package/`.
+It is an ESM package that installs the generated local npm tarball and sends a simple `Hello world` text payload to the currently focused window.
+It is kept in the repository for manual testing, but it is not included in the published npm package.

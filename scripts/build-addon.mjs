@@ -179,7 +179,7 @@ function buildWindowsAddon() {
     "-D_CRT_SECURE_NO_WARNINGS",
     ...includeDirs.flatMap((dir) => ["-I", dir]),
     "-c",
-    path.join(rootDir, "src", "addon.c"),
+    path.join(rootDir, "csrc", "addon.c"),
     "-o",
     addonObject,
   ]);
@@ -187,7 +187,7 @@ function buildWindowsAddon() {
   run("clang++", [
     "-std=c++20",
     "-c",
-    path.join(rootDir, "src", "win_delay_load_hook.cc"),
+    path.join(rootDir, "csrc", "win_delay_load_hook.cc"),
     "-o",
     delayHookObject,
   ]);

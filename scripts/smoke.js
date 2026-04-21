@@ -1,8 +1,9 @@
 "use strict";
 
-const axidev = require("../index.js");
+const axidev = require("..");
 
 console.log("version:", axidev.version());
-console.log("backend:", axidev.getBackendName());
-console.log("ctrl+shift+a:", axidev.parseCombo("Ctrl+Shift+A"));
-console.log("format:", axidev.formatCombo("Ctrl+Shift+A"));
+console.log("backend:", axidev.keyboard.backendName);
+console.log("ready:", axidev.keyboard.initialized);
+console.log("ctrl+shift+a:", axidev.keyboard.keys.parseCombo("Ctrl+Shift+A"));
+console.log("format:", axidev.keyboard.keys.formatCombo("Ctrl+Shift+A"));

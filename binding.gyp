@@ -3,7 +3,7 @@
     {
       "target_name": "axidev_io",
       "sources": [
-        "src/addon.c",
+        "csrc/addon.c",
         "vendor/axidev-io/src/c_api.c",
         "vendor/axidev-io/src/core/context.c",
         "vendor/axidev-io/src/core/log.c",
