@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            platform: linux
+          - os: windows-latest
+            target: win32-x64
+            platform: win32
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libinput-dev \
+            libudev-dev \
+            libxkbcommon-dev
+
+      - name: Ensure LLVM is available
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command clang -ErrorAction SilentlyContinue)) {
+            choco install llvm -y --no-progress
+          }
+
+          if (Test-Path "C:\Program Files\LLVM\bin") {
+            "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+          clang --version
+          clang++ --version
+
+      - name: Install Node.js dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build release package contents
+        run: npm run build:release
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: node --test
+
+      - name: Run smoke test
+        run: node scripts/smoke.js
+
+      - name: Verify Linux shared-library linkage
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ldd_output="$(ldd prebuilds/linux-x64/axidev_io.node)"
+          printf '%s\n' "$ldd_output"
+
+          printf '%s\n' "$ldd_output" | grep -E 'libinput\.so'
+          printf '%s\n' "$ldd_output" | grep -E 'libudev\.so'
+          printf '%s\n' "$ldd_output" | grep -E 'libxkbcommon\.so'
+
+          if printf '%s\n' "$ldd_output" | grep -E 'not found'; then
+            echo "::error::One or more required Linux shared libraries were not resolved."
+            exit 1
+          fi
+
+      - name: Verify publish tarball shape
+        run: npm pack --dry-run

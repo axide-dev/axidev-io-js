@@ -159,3 +159,32 @@ Useful scripts:
 There is also a tracked local consumer fixture in `test-package/`.
 It is an ESM package that installs the generated local npm tarball and sends a simple `Hello world` text payload to the currently focused window.
 It is kept in the repository for manual testing, but it is not included in the published npm package.
+
+## CI And Release
+
+GitHub Actions CI runs on:
+
+- pushes to `main`
+- pull requests targeting `main`
+
+The CI matrix builds and verifies:
+
+- `linux-x64`
+- `win32-x64`
+
+The release publish workflow runs when a GitHub Release is published.
+It rejects releases whose tag is not based on the `release` branch, builds the native prebuilds on Linux and Windows, assembles them into one npm package, and publishes `@axidev/io` as a public package.
+
+Recommended release flow:
+
+1. Merge release-ready changes into `release`
+2. Bump `package.json` version on `release`
+3. Create a Git tag from `release`
+4. Publish a GitHub Release for that tag
+
+Required GitHub Actions secret:
+
+- `NPM_TOKEN`: an npm token that can publish the public `@axidev/io` package under the `axidev` organization on npm
+
+No extra GitHub PAT is required for publishing.
+The workflow uses GitHub's built-in `GITHUB_TOKEN` for repository access and OIDC provenance via `id-token: write`.

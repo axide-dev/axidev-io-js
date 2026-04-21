@@ -1,0 +1,201 @@
+name: Publish
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate-release:
+    name: Validate release source
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify tag is based on release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ github.event.release.tag_name }}"
+          git fetch origin release --depth=1
+
+          release_sha="$(git rev-list -n 1 "$tag")"
+          if ! git merge-base --is-ancestor "$release_sha" "origin/release"; then
+            echo "::error::Release tag $tag is not based on origin/release."
+            exit 1
+          fi
+
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ github.event.release.tag_name }}"
+          package_version="$(node -p "require('./package.json').version")"
+
+          if [ "$tag" != "$package_version" ] && [ "$tag" != "v$package_version" ]; then
+            echo "::error::Release tag $tag does not match package.json version $package_version."
+            exit 1
+          fi
+
+  build-prebuilds:
+    name: Build ${{ matrix.target }} prebuild
+    needs: validate-release
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            platform: linux
+          - os: windows-latest
+            target: win32-x64
+            platform: win32
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libinput-dev \
+            libudev-dev \
+            libxkbcommon-dev
+
+      - name: Ensure LLVM is available
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command clang -ErrorAction SilentlyContinue)) {
+            choco install llvm -y --no-progress
+          }
+
+          if (Test-Path "C:\Program Files\LLVM\bin") {
+            "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+          clang --version
+          clang++ --version
+
+      - name: Install Node.js dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build native addon
+        run: npm run build:native
+
+      - name: Stage packaged prebuild
+        run: npm run stage:prebuilt
+
+      - name: Verify Linux shared-library linkage
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ldd_output="$(ldd prebuilds/linux-x64/axidev_io.node)"
+          printf '%s\n' "$ldd_output"
+
+          printf '%s\n' "$ldd_output" | grep -E 'libinput\.so'
+          printf '%s\n' "$ldd_output" | grep -E 'libudev\.so'
+          printf '%s\n' "$ldd_output" | grep -E 'libxkbcommon\.so'
+
+          if printf '%s\n' "$ldd_output" | grep -E 'not found'; then
+            echo "::error::One or more required Linux shared libraries were not resolved."
+            exit 1
+          fi
+
+      - name: Upload prebuilt artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.target }}
+          path: prebuilds/${{ matrix.target }}/axidev_io.node
+          if-no-files-found: error
+
+  publish-npm:
+    name: Publish npm package
+    needs: build-prebuilds
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+          scope: "@axidev"
+
+      - name: Install Node.js dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build JavaScript artifacts
+        run: npm run build
+
+      - name: Download prebuilt artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .artifacts
+
+      - name: Assemble prebuild directories
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p prebuilds/linux-x64 prebuilds/win32-x64
+          cp .artifacts/prebuild-linux-x64/axidev_io.node prebuilds/linux-x64/axidev_io.node
+          cp .artifacts/prebuild-win32-x64/axidev_io.node prebuilds/win32-x64/axidev_io.node
+
+          test -f prebuilds/linux-x64/axidev_io.node
+          test -f prebuilds/win32-x64/axidev_io.node
+
+      - name: Verify final publish tarball
+        run: npm pack --dry-run
+
+      - name: Publish public package to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --ignore-scripts --provenance
