@@ -395,7 +395,8 @@ static napi_value js_key_down(napi_env env, napi_callback_info info) {
 
   key_mod.key = (axidev_io_keyboard_key_t)key;
   key_mod.mods = (axidev_io_keyboard_modifier_t)mods;
-  return axidev_io_return_boolean(env, axidev_io_keyboard_key_down(key_mod));
+  return axidev_io_return_boolean(env,
+                                  axidev_io_keyboard_key_down(key_mod, false));
 }
 
 static napi_value js_key_up(napi_env env, napi_callback_info info) {
